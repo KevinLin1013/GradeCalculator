@@ -1,0 +1,117 @@
+'''
+HW10: work with Canvas API
+@Date Created: 10/27/23
+@pid: kevinlin04
+@author: Kevin Lin
+'''
+
+import requests
+import json
+
+has_access_token = False # if the json file has the access token
+has_api_version = False # if the json file has the API version
+has_base_url = False # if the json file has the base url
+has_course_id = False # if the json file has the course id
+
+env_config = {} 
+
+# get what we need from json file
+try:
+    with open('config.json', 'r') as config_json:
+        config = json.load(config_json)
+        if 'ACCESS_TOKEN' in config:
+            env_config['ACCESS_TOKEN'] = config['ACCESS_TOKEN']
+            has_access_token = True
+        if 'BASE_URL' in config:
+            env_config['BASE_URL'] = config['BASE_URL']
+            has_base_url = True
+        if 'COURSE_ID' in config:
+            env_config['COURSE_ID'] = config['COURSE_ID']
+            has_course_id = True
+        if "API_VERSION" in config:
+            env_config['API_VERSION'] = config['API_VERSION']
+            has_api_version = True
+except FileNotFoundError: # if json file doesn't exist
+    pass
+except json.decoder.JSONDecodeError: # if json file is invalid
+    pass
+
+# for no config.json
+if not has_access_token:
+    env_config['ACCESS_TOKEN'] = input('Please input your access token: ')
+    has_access_token = True
+if not has_base_url:
+    env_config['BASE_URL'] = input('Please input your canvas base url: ')
+    has_base_url = True
+if not has_api_version:
+    env_config['API_VERSION'] = input('Please input the API version of Canvas: ')
+    has_api_version = True
+while not has_course_id: 
+    env_config['COURSE_ID'] = input('Please input your course id: ')
+    if env_config['COURSE_ID'].isdigit():
+        env_config['COURSE_ID'] = int(env_config['COURSE_ID'])
+        has_course_id = True
+    else:
+        print("Error! The course ID should be an integer.")
+
+
+ACCESS_TOKEN = env_config['ACCESS_TOKEN']
+BASE_URL = env_config['BASE_URL']
+API_VERSION = env_config['API_VERSION']
+COURSE_ID = env_config['COURSE_ID']
+
+def get_paginated_list(url, header=None, params=None):
+    response = requests.get(url, headers=header, params=params)
+    data = response.json()
+    while 'next' in response.links:
+        response = requests.get(response.links['next']['url'], headers=header)
+        data += response.json()
+    return data
+
+
+
+header = {
+    'Authorization': f'Bearer {ACCESS_TOKEN}'
+}
+
+ASSIGNMENT_GROUPS_URL = BASE_URL + '/' + API_VERSION + '/' + 'courses/' + COURSE_ID + '/assignment_groups?include[]=assignments&include[]=submission'
+assignments_by_group = get_paginated_list(ASSIGNMENT_GROUPS_URL, header)
+
+#grade calculations
+
+total_weight = 0 # Store the total weight of all assignment group
+percentage_earned_current = 0 # Store the current percentage earned
+percentage_earned_final = 0 # Store the final percentage earned
+
+for group in assignments_by_group:
+    group_name = group['name']
+    group_weight = group['group_weight']
+    id = group['id']
+    print(f"Assignment Group: {group_name} (Assignment Group ID: {id}) - Weight: {group_weight}")
+
+    group_score = 0.0
+    group_score_possible = 0.0
+    for assignment in group['assignments']:
+        assignment_name = assignment['name']
+        grade_possible = assignment['points_possible']
+
+        submission = assignment['submission']
+        score = "None"
+        if 'score' in submission:
+            score = submission['grade']
+            
+            if(score != None):
+                group_score += float(score)
+                group_score_possible += float(grade_possible)
+
+        print(f"Assignment: {assignment_name}\tGrade Possible: {grade_possible}\tPoints Earned: {score}")
+    if group_score_possible > 0:
+        percentage_earned_final += (group_score/group_score_possible) * group_weight
+        total_weight += group_weight
+    
+    print("\n")
+percentage_earned_current = percentage_earned_final/total_weight * 100
+
+
+print("Current Grade: " + str(round(percentage_earned_current,2)) + "%")
+print("Final Grade: " + str(round(percentage_earned_final,2)) + "%")
